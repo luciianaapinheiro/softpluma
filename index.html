@@ -467,10 +467,21 @@ h1 em{
 }
 .hint-small{font-size:11px;color:#B7AC9E;margin-top:6px;}
 .preview{margin-top:12px;}
-.preview img{max-width:100%;border-radius:12px;display:block;}
-.preview a{font-size:13px;color:var(--pink-deep);word-break:break-all;}
+.preview-item img{max-width:100%;border-radius:12px;display:block;}
+.preview-item a{font-size:13px;color:var(--pink-deep);word-break:break-all;}
+.preview-controls{
+  display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;
+}
+.preview-arrow{
+  width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);
+  background:#fff;color:var(--plum);font-size:16px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.preview-arrow:hover:not(:disabled){background:var(--plum);color:#fff;border-color:var(--plum);}
+.preview-arrow:disabled{opacity:.3;cursor:not-allowed;}
+.preview-counter{font-size:12px;color:var(--plum-soft);font-weight:700;}
 .preview .remove{
-  margin-top:6px;font-size:11.5px;color:#B04141;background:none;border:none;
+  margin-left:auto;font-size:11.5px;color:#B04141;background:none;border:none;
   cursor:pointer;text-decoration:underline;padding:0;
 }
 
@@ -935,7 +946,7 @@ async function openModal(date){
       <div class="section-label">Arte / mídia</div>
       <div id="preview-area" class="preview"><span style="font-size:12.5px;color:#B7AC9E;">Carregando...</span></div>
       <div class="upload-box">
-        <input type="file" id="file-input" accept="image/*" />
+        <input type="file" id="file-input" accept="image/*" multiple />
         <div class="hint-small">A imagem é comprimida automaticamente antes de salvar.</div>
         <div class="upload-row">
           <input type="url" id="video-link" placeholder="ou cole aqui o link do vídeo (Drive, YouTube não listado etc.)" />
@@ -962,7 +973,9 @@ async function openModal(date){
   `;
   overlay.classList.add('show');
 
-  const saved = (await window.loadPost(item.date)) || { status:"pendente", note:"", media:null };
+  const saved = (await window.loadPost(item.date)) || { status:"pendente", note:"", mediaList:[] };
+  if(!saved.mediaList){ saved.mediaList = saved.media ? [saved.media] : []; }
+  currentMediaIndex = Math.max(0, saved.mediaList.length - 1);
 
   document.getElementById("file-input").onchange = (e)=>handleImage(e, item.date);
   document.getElementById("attach-video-btn").onclick = ()=>attachVideoLink(item.date);
@@ -971,21 +984,46 @@ async function openModal(date){
     b.onclick = ()=>setStatus(item.date, b.dataset.s);
   });
 
-  renderPreview(saved.media, item.date);
+  renderPreview(saved.mediaList, item.date);
   highlightStatus(saved.status);
   document.getElementById("note-text").value = saved.note || "";
   if(saved.status==="correcao") document.getElementById("note-field").classList.add("show");
 }
 
-function renderPreview(media, id){
+let currentMediaIndex = 0;
+
+function renderPreview(mediaList, id){
   const area = document.getElementById("preview-area");
   if(!area) return;
-  if(!media){ area.innerHTML = `<span style="font-size:12.5px;color:#B7AC9E;">Nada anexado ainda.</span>`; return; }
-  if(media.type==="image"){
-    area.innerHTML = `<img src="${media.data}" /><button class="remove" id="remove-media-btn">remover</button>`;
-  } else {
-    area.innerHTML = `<a href="${media.data}" target="_blank" rel="noopener">🔗 ${media.data}</a><br/><button class="remove" id="remove-media-btn">remover</button>`;
+  if(!mediaList || mediaList.length===0){
+    area.innerHTML = `<span style="font-size:12.5px;color:#B7AC9E;">Nada anexado ainda.</span>`;
+    return;
   }
+  if(currentMediaIndex >= mediaList.length) currentMediaIndex = mediaList.length - 1;
+  if(currentMediaIndex < 0) currentMediaIndex = 0;
+  const media = mediaList[currentMediaIndex];
+
+  let itemHTML = "";
+  if(media.type==="image"){
+    itemHTML = `<img src="${media.data}" />`;
+  } else {
+    itemHTML = `<a href="${media.data}" target="_blank" rel="noopener">🔗 ${media.data}</a>`;
+  }
+
+  const hasMultiple = mediaList.length > 1;
+  area.innerHTML = `
+    <div class="preview-item">${itemHTML}</div>
+    <div class="preview-controls">
+      ${hasMultiple ? `<button class="preview-arrow" id="prev-media-btn" ${currentMediaIndex===0?'disabled':''}>‹</button>` : ''}
+      <span class="preview-counter">${currentMediaIndex+1} / ${mediaList.length}</span>
+      ${hasMultiple ? `<button class="preview-arrow" id="next-media-btn" ${currentMediaIndex===mediaList.length-1?'disabled':''}>›</button>` : ''}
+      <button class="remove" id="remove-media-btn">remover esta</button>
+    </div>
+  `;
+  const prevBtn = document.getElementById("prev-media-btn");
+  const nextBtn = document.getElementById("next-media-btn");
+  if(prevBtn) prevBtn.onclick = ()=>{ currentMediaIndex--; renderPreview(mediaList, id); };
+  if(nextBtn) nextBtn.onclick = ()=>{ currentMediaIndex++; renderPreview(mediaList, id); };
   document.getElementById("remove-media-btn").onclick = ()=>removeMedia(id);
 }
 
@@ -1010,19 +1048,24 @@ function compressImage(file, maxDim, quality){
 }
 
 async function handleImage(e, id){
-  const file = e.target.files[0];
-  if(!file) return;
-  setHint("Comprimindo e salvando...");
+  const files = Array.from(e.target.files || []);
+  if(files.length===0) return;
+  setHint(files.length>1 ? `Comprimindo e salvando ${files.length} imagens...` : "Comprimindo e salvando...");
+  const saved = postsCache[id] || {status:"pendente", note:""};
+  if(!saved.mediaList) saved.mediaList = saved.media ? [saved.media] : [];
+  delete saved.media;
   try{
-    let dataUrl = await compressImage(file, 1000, 0.7);
-    if(dataUrl.length > 700000){ dataUrl = await compressImage(file, 700, 0.55); }
-    if(dataUrl.length > 900000){ setHint("Imagem ainda muito grande, tente outra foto."); return; }
-    const media = { type:"image", data:dataUrl };
-    const saved = postsCache[id] || {status:"pendente", note:""};
-    saved.media = media;
+    for(const file of files){
+      let dataUrl = await compressImage(file, 1000, 0.7);
+      if(dataUrl.length > 700000){ dataUrl = await compressImage(file, 700, 0.55); }
+      if(dataUrl.length > 900000){ continue; }
+      saved.mediaList.push({ type:"image", data:dataUrl });
+    }
     await window.savePost(id, saved);
-    renderPreview(media, id);
-    setHint("Imagem salva.");
+    currentMediaIndex = saved.mediaList.length - 1;
+    renderPreview(saved.mediaList, id);
+    setHint("Imagens adicionadas.");
+    e.target.value = "";
   }catch(err){
     setHint("Erro ao processar imagem.");
   }
@@ -1032,15 +1075,17 @@ async function attachVideoLink(id){
   const input = document.getElementById("video-link");
   const url = input.value.trim();
   if(!url) return;
-  const media = { type:"video", data:url };
   const saved = postsCache[id] || {status:"pendente", note:""};
-  saved.media = media;
-  renderPreview(media, id);
+  if(!saved.mediaList) saved.mediaList = saved.media ? [saved.media] : [];
+  saved.mediaList.push({ type:"video", data:url });
+  delete saved.media;
+  currentMediaIndex = saved.mediaList.length - 1;
+  renderPreview(saved.mediaList, id);
   input.value = "";
   setHint("Salvando link...");
   try{
     await window.savePost(id, saved);
-    setHint("Link de vídeo salvo.");
+    setHint("Link de vídeo adicionado.");
   }catch(err){
     console.error(err);
     setHint("Erro ao salvar. Veja as regras do Firestore.");
@@ -1049,8 +1094,10 @@ async function attachVideoLink(id){
 
 async function removeMedia(id){
   const saved = postsCache[id] || {status:"pendente", note:""};
-  saved.media = null;
-  renderPreview(null, id);
+  if(!saved.mediaList) saved.mediaList = saved.media ? [saved.media] : [];
+  saved.mediaList.splice(currentMediaIndex, 1);
+  delete saved.media;
+  renderPreview(saved.mediaList, id);
   setHint("Removendo...");
   try{
     await window.savePost(id, saved);
