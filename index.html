@@ -1063,15 +1063,17 @@ async function removeMedia(id){
 
 async function setStatus(id, status){
   const saved = postsCache[id] || {note:"", media:null};
-  saved.status = status;
+  const statusAnterior = saved.status || "pendente";
+  const novoStatus = (statusAnterior === status) ? "pendente" : status;
+  saved.status = novoStatus;
   postsCache[id] = saved;
-  highlightStatus(status);
+  highlightStatus(novoStatus);
   const nf = document.getElementById("note-field");
-  if(nf) nf.classList.toggle("show", status==="correcao");
+  if(nf) nf.classList.toggle("show", novoStatus==="correcao");
   setHint("Salvando...");
   try{
     await window.savePost(id, saved);
-    setHint("Status atualizado: " + STATUS_LABEL[status]);
+    setHint(novoStatus==="pendente" ? "Status removido, voltou para Pendente." : "Status atualizado: " + STATUS_LABEL[novoStatus]);
   }catch(err){
     console.error(err);
     setHint("Não salvou no Firebase (veja as regras do Firestore).");
