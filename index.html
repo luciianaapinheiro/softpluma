@@ -494,6 +494,20 @@ h1 em{
 .status-btn.ok.active{background:#3E7A45;border-color:#3E7A45;color:#fff;}
 .status-btn.no.active{background:#C1392B;border-color:#C1392B;color:#fff;}
 .status-btn.warn.active{background:#E07B23;border-color:#E07B23;color:#fff;}
+.status-btn.pub.active{background:#1F8A4C;border-color:#1F8A4C;color:#fff;}
+
+.cell.publicado{background:#E4F5E8 !important;border-color:#1F8A4C !important;}
+.cell.publicado:hover{border-color:#1F8A4C !important;}
+.status-chip.publicado{background:#1F8A4C;color:#fff;}
+
+.descricao-field textarea{
+  width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;font-family:'Manrope',sans-serif;font-size:13.5px;
+  background:#fff;color:var(--plum);resize:vertical;line-height:1.55;
+}
+.descricao-editada-aviso{
+  font-size:11.5px;color:#1F8A4C;font-weight:700;margin-top:6px;
+}
 
 .note-field{margin-top:10px;display:none;}
 .note-field.show{display:block;}
@@ -650,10 +664,14 @@ onSnapshot(collection(db, "posts"), (snap)=>{
   snap.docChanges().forEach(change=>{
     postsCache[change.doc.id] = change.doc.data();
     const chip = document.querySelector(`.status-chip[data-for="${change.doc.id}"]`);
+    const status = change.doc.data()?.status || "pendente";
     if(chip){
-      const status = change.doc.data()?.status || "pendente";
       chip.className = "status-chip " + status;
       chip.textContent = STATUS_LABEL[status];
+    }
+    const cell = document.querySelector(`.cell[data-date="${change.doc.id}"]`);
+    if(cell){
+      cell.classList.toggle("publicado", status === "publicado");
     }
   });
 });
@@ -800,7 +818,7 @@ final:"Porque cada detalhe importa."}
 const CONTENT_MAP = {};
 CONTENT.forEach(c=>CONTENT_MAP[c.date]=c);
 
-const STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", reprovado:"Reprovado", correcao:"Correção" };
+const STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", reprovado:"Reprovado", correcao:"Correção", publicado:"Publicado" };
 const postsCache = {};
 
 const WEEK_LABELS = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -921,12 +939,36 @@ function blockHTML(b){
   return `<div class="block">${inner}</div>`;
 }
 
+function blocksToText(item){
+  let out = "";
+  item.blocks.forEach(b=>{
+    if(b.h) out += b.h.toUpperCase() + "\n";
+    if(b.p) b.p.forEach(p=> out += p + "\n");
+    if(b.list) b.list.forEach(li=> out += "- " + li + "\n");
+    if(b.quote) out += '"' + b.quote + '"\n';
+    out += "\n";
+  });
+  if(item.final) out += 'Mensagem final: "' + item.final + '"\n';
+  return out.trim();
+}
+
+function escapeHtml(str){
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 async function openModal(date){
   const item = CONTENT_MAP[date];
   const tagName = item.tag==='green' ? 'Karina' : 'Luciana';
   const idx = CONTENT.indexOf(item);
   const prev = CONTENT[idx-1];
   const next = CONTENT[idx+1];
+
+  const saved = (await window.loadPost(item.date)) || { status:"pendente", note:"", mediaList:[] };
+  if(!saved.mediaList){ saved.mediaList = saved.media ? [saved.media] : []; }
+  const temDescricaoEditada = !!saved.descricao;
+  const descricaoTexto = saved.descricao || blocksToText(item);
 
   modal.innerHTML = `
     <div class="modal-head ${item.tag}">
@@ -940,8 +982,15 @@ async function openModal(date){
       </div>
     </div>
     <div class="modal-body">
-      ${item.blocks.map(blockHTML).join('')}
-      ${item.final ? `<div class="final-msg"><span>Mensagem final</span>“${item.final}”</div>` : ''}
+      ${temDescricaoEditada
+        ? `<div class="block"><p style="white-space:pre-wrap;">${escapeHtml(descricaoTexto)}</p></div><div class="descricao-editada-aviso">✎ Descrição editada</div>`
+        : item.blocks.map(blockHTML).join('') + (item.final ? `<div class="final-msg"><span>Mensagem final</span>"${item.final}"</div>` : '')}
+
+      <div class="section-label" style="margin-top:20px;">Descrição do conteúdo (editável)</div>
+      <div class="descricao-field">
+        <textarea id="descricao-text">${escapeHtml(descricaoTexto)}</textarea>
+      </div>
+      <div class="saved-hint" id="descricao-hint"></div>
 
       <div class="section-label">Arte / mídia</div>
       <div id="preview-area" class="preview"><span style="font-size:12.5px;color:#B7AC9E;">Carregando...</span></div>
@@ -959,6 +1008,7 @@ async function openModal(date){
         <button class="status-btn ok" data-s="aprovado">✓ Aprovado</button>
         <button class="status-btn no" data-s="reprovado">✕ Reprovado</button>
         <button class="status-btn warn" data-s="correcao">✎ Correção</button>
+        <button class="status-btn pub" data-s="publicado">📤 Publicado</button>
       </div>
       <div class="note-field" id="note-field">
         <div class="section-label" style="margin-top:12px;">O que precisa ajustar</div>
@@ -973,13 +1023,12 @@ async function openModal(date){
   `;
   overlay.classList.add('show');
 
-  const saved = (await window.loadPost(item.date)) || { status:"pendente", note:"", mediaList:[] };
-  if(!saved.mediaList){ saved.mediaList = saved.media ? [saved.media] : []; }
   currentMediaIndex = Math.max(0, saved.mediaList.length - 1);
 
   document.getElementById("file-input").onchange = (e)=>handleImage(e, item.date);
   document.getElementById("attach-video-btn").onclick = ()=>attachVideoLink(item.date);
   document.getElementById("note-text").oninput = debounce(()=>saveNote(item.date), 500);
+  document.getElementById("descricao-text").oninput = debounce(()=>saveDescricao(item.date), 600);
   document.querySelectorAll(".status-btn").forEach(b=>{
     b.onclick = ()=>setStatus(item.date, b.dataset.s);
   });
@@ -1143,6 +1192,22 @@ async function saveNote(id){
   }catch(err){
     console.error(err);
     setHint("Não salvou no Firebase (veja as regras do Firestore).");
+  }
+}
+
+async function saveDescricao(id){
+  const saved = postsCache[id] || {status:"pendente", media:null};
+  const el = document.getElementById("descricao-text");
+  if(!el) return;
+  saved.descricao = el.value;
+  postsCache[id] = saved;
+  const hint = document.getElementById("descricao-hint");
+  try{
+    await window.savePost(id, saved);
+    if(hint){ hint.textContent = "Descrição salva."; setTimeout(()=>{ if(hint) hint.textContent=""; }, 2500); }
+  }catch(err){
+    console.error(err);
+    if(hint) hint.textContent = "Não salvou no Firebase (veja as regras do Firestore).";
   }
 }
 
