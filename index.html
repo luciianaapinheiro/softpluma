@@ -509,6 +509,15 @@ h1 em{
   font-size:11.5px;color:#1F8A4C;font-weight:700;margin-top:6px;
 }
 
+.resp-toggle{display:flex;gap:8px;margin-top:8px;}
+.resp-btn{
+  flex:1;min-width:100px;border:1px solid var(--line);background:#fff;
+  padding:10px 6px;border-radius:12px;font-size:12.5px;font-weight:700;
+  cursor:pointer;color:var(--plum-soft);transition:.15s;
+}
+.resp-btn.green.active{background:var(--green-deep);border-color:var(--green-deep);color:#fff;}
+.resp-btn.pink.active{background:var(--pink-deep);border-color:var(--pink-deep);color:#fff;}
+
 .note-field{margin-top:10px;display:none;}
 .note-field.show{display:block;}
 .note-field textarea{
@@ -660,24 +669,37 @@ window.savePost = async function(id, data){
   await setDoc(postRef(id), data, { merge:true });
   postsCache[id] = data;
 };
+window.__updateCellUI = function(date, data){
+  const status = data?.status || "pendente";
+  const chip = document.querySelector(`.status-chip[data-for="${date}"]`);
+  if(chip){
+    chip.className = "status-chip " + status;
+    chip.textContent = STATUS_LABEL[status];
+  }
+  const cell = document.querySelector(`.cell[data-date="${date}"]`);
+  if(cell && window.CONTENT_MAP && window.CONTENT_MAP[date]){
+    cell.classList.toggle("publicado", status === "publicado");
+    const item = window.CONTENT_MAP[date];
+    const tag = (data && data.responsavel) ? data.responsavel : item.tag;
+    cell.classList.remove("pink","green");
+    cell.classList.add(tag);
+    const tagSpan = cell.querySelector(".tag");
+    if(tagSpan){
+      tagSpan.className = "tag " + tag;
+      tagSpan.textContent = tag === "green" ? "Karina" : "Luciana";
+    }
+  }
+};
 onSnapshot(collection(db, "posts"), (snap)=>{
   snap.docChanges().forEach(change=>{
     postsCache[change.doc.id] = change.doc.data();
-    const chip = document.querySelector(`.status-chip[data-for="${change.doc.id}"]`);
-    const status = change.doc.data()?.status || "pendente";
-    if(chip){
-      chip.className = "status-chip " + status;
-      chip.textContent = STATUS_LABEL[status];
-    }
-    const cell = document.querySelector(`.cell[data-date="${change.doc.id}"]`);
-    if(cell){
-      cell.classList.toggle("publicado", status === "publicado");
-    }
+    window.__updateCellUI(change.doc.id, change.doc.data());
   });
 });
 </script>
 
 <script>
+window.CONTENT_MAP = null;
 const CONTENT = [
 {n:1,date:"2026-09-01",tag:"pink",format:"Carrossel",duration:"",
 title:"Quem é a Soft Pluma?",
@@ -817,6 +839,7 @@ final:"Porque cada detalhe importa."}
 
 const CONTENT_MAP = {};
 CONTENT.forEach(c=>CONTENT_MAP[c.date]=c);
+window.CONTENT_MAP = CONTENT_MAP;
 
 const STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", reprovado:"Reprovado", correcao:"Correção", publicado:"Publicado" };
 const postsCache = {};
@@ -960,7 +983,6 @@ function escapeHtml(str){
 
 async function openModal(date){
   const item = CONTENT_MAP[date];
-  const tagName = item.tag==='green' ? 'Karina' : 'Luciana';
   const idx = CONTENT.indexOf(item);
   const prev = CONTENT[idx-1];
   const next = CONTENT[idx+1];
@@ -969,16 +991,18 @@ async function openModal(date){
   if(!saved.mediaList){ saved.mediaList = saved.media ? [saved.media] : []; }
   const temDescricaoEditada = !!saved.descricao;
   const descricaoTexto = saved.descricao || blocksToText(item);
+  const tagAtual = saved.responsavel || item.tag;
+  const tagNomeAtual = tagAtual === 'green' ? 'Karina' : 'Luciana';
 
   modal.innerHTML = `
-    <div class="modal-head ${item.tag}">
+    <div class="modal-head ${tagAtual}" id="modal-head-el">
       <button class="modal-close" onclick="closeModal()">✕</button>
       <div class="modal-eyebrow">Conteúdo #${String(item.n).padStart(2,'0')} · ${fmtDatePt(item.date)}</div>
       <h2 class="modal-title">${item.title}</h2>
       <div class="modal-meta">
         <span class="meta-chip">${item.format}</span>
         ${item.duration? `<span class="meta-chip">${item.duration}</span>`:''}
-        <span class="meta-chip tag-${item.tag}">Responsável: ${tagName}</span>
+        <span class="meta-chip tag-${tagAtual}" id="resp-chip">Responsável: ${tagNomeAtual}</span>
       </div>
     </div>
     <div class="modal-body">
@@ -991,6 +1015,12 @@ async function openModal(date){
         <textarea id="descricao-text">${escapeHtml(descricaoTexto)}</textarea>
       </div>
       <div class="saved-hint" id="descricao-hint"></div>
+
+      <div class="section-label">Responsável pelo post</div>
+      <div class="resp-toggle">
+        <button class="resp-btn green ${tagAtual==='green'?'active':''}" data-r="green">Karina</button>
+        <button class="resp-btn pink ${tagAtual==='pink'?'active':''}" data-r="pink">Luciana</button>
+      </div>
 
       <div class="section-label">Arte / mídia</div>
       <div id="preview-area" class="preview"><span style="font-size:12.5px;color:#B7AC9E;">Carregando...</span></div>
@@ -1032,11 +1062,42 @@ async function openModal(date){
   document.querySelectorAll(".status-btn").forEach(b=>{
     b.onclick = ()=>setStatus(item.date, b.dataset.s);
   });
+  document.querySelectorAll(".resp-btn").forEach(b=>{
+    b.onclick = ()=>setResponsavel(item.date, b.dataset.r);
+  });
 
   renderPreview(saved.mediaList, item.date);
   highlightStatus(saved.status);
   document.getElementById("note-text").value = saved.note || "";
   if(saved.status==="correcao") document.getElementById("note-field").classList.add("show");
+}
+
+async function setResponsavel(id, tag){
+  const saved = postsCache[id] || {status:"pendente"};
+  saved.responsavel = tag;
+  postsCache[id] = saved;
+
+  // Atualiza o modal na hora
+  const head = document.getElementById("modal-head-el");
+  if(head){ head.classList.remove("pink","green"); head.classList.add(tag); }
+  const chip = document.getElementById("resp-chip");
+  if(chip){
+    chip.className = "meta-chip tag-" + tag;
+    chip.textContent = "Responsável: " + (tag==='green' ? 'Karina' : 'Luciana');
+  }
+  document.querySelectorAll(".resp-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.r === tag);
+  });
+
+  // Atualiza o quadradinho no calendário na hora
+  window.__updateCellUI(id, saved);
+
+  try{
+    await window.savePost(id, saved);
+  }catch(err){
+    console.error(err);
+    setHint("Não salvou no Firebase (veja as regras do Firestore).");
+  }
 }
 
 let currentMediaIndex = 0;
