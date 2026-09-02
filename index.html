@@ -518,6 +518,14 @@ h1 em{
 .resp-btn.green.active{background:var(--green-deep);border-color:var(--green-deep);color:#fff;}
 .resp-btn.pink.active{background:var(--pink-deep);border-color:var(--pink-deep);color:#fff;}
 
+.formato-toggle{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+.formato-btn{
+  flex:1;min-width:100px;border:1px solid var(--line);background:#fff;
+  padding:10px 6px;border-radius:12px;font-size:12.5px;font-weight:700;
+  cursor:pointer;color:var(--plum-soft);transition:.15s;
+}
+.formato-btn.active{background:var(--plum);border-color:var(--plum);color:var(--cream);}
+
 .note-field{margin-top:10px;display:none;}
 .note-field.show{display:block;}
 .note-field textarea{
@@ -687,6 +695,10 @@ window.__updateCellUI = function(date, data){
     if(tagSpan){
       tagSpan.className = "tag " + tag;
       tagSpan.textContent = tag === "green" ? "Karina" : "Luciana";
+    }
+    const formatoSpan = cell.querySelector(".cell-format");
+    if(formatoSpan){
+      formatoSpan.textContent = (data && data.formato) ? data.formato : item.format;
     }
   }
 };
@@ -993,6 +1005,8 @@ async function openModal(date){
   const descricaoTexto = saved.descricao || blocksToText(item);
   const tagAtual = saved.responsavel || item.tag;
   const tagNomeAtual = tagAtual === 'green' ? 'Karina' : 'Luciana';
+  const formatoAtual = saved.formato || item.format;
+  const FORMATOS = ["Reels", "Carrossel", "Postagem estática"];
 
   modal.innerHTML = `
     <div class="modal-head ${tagAtual}" id="modal-head-el">
@@ -1000,7 +1014,7 @@ async function openModal(date){
       <div class="modal-eyebrow">Conteúdo #${String(item.n).padStart(2,'0')} · ${fmtDatePt(item.date)}</div>
       <h2 class="modal-title">${item.title}</h2>
       <div class="modal-meta">
-        <span class="meta-chip">${item.format}</span>
+        <span class="meta-chip" id="formato-chip">${formatoAtual}</span>
         ${item.duration? `<span class="meta-chip">${item.duration}</span>`:''}
         <span class="meta-chip tag-${tagAtual}" id="resp-chip">Responsável: ${tagNomeAtual}</span>
       </div>
@@ -1015,6 +1029,11 @@ async function openModal(date){
         <textarea id="descricao-text">${escapeHtml(descricaoTexto)}</textarea>
       </div>
       <div class="saved-hint" id="descricao-hint"></div>
+
+      <div class="section-label">Formato</div>
+      <div class="formato-toggle">
+        ${FORMATOS.map(f=>`<button class="formato-btn ${formatoAtual===f?'active':''}" data-f="${f}">${f}</button>`).join('')}
+      </div>
 
       <div class="section-label">Responsável pelo post</div>
       <div class="resp-toggle">
@@ -1065,11 +1084,35 @@ async function openModal(date){
   document.querySelectorAll(".resp-btn").forEach(b=>{
     b.onclick = ()=>setResponsavel(item.date, b.dataset.r);
   });
+  document.querySelectorAll(".formato-btn").forEach(b=>{
+    b.onclick = ()=>setFormato(item.date, b.dataset.f);
+  });
 
   renderPreview(saved.mediaList, item.date);
   highlightStatus(saved.status);
   document.getElementById("note-text").value = saved.note || "";
   if(saved.status==="correcao") document.getElementById("note-field").classList.add("show");
+}
+
+async function setFormato(id, formato){
+  const saved = postsCache[id] || {status:"pendente"};
+  saved.formato = formato;
+  postsCache[id] = saved;
+
+  const chip = document.getElementById("formato-chip");
+  if(chip) chip.textContent = formato;
+  document.querySelectorAll(".formato-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.f === formato);
+  });
+
+  window.__updateCellUI(id, saved);
+
+  try{
+    await window.savePost(id, saved);
+  }catch(err){
+    console.error(err);
+    setHint("Não salvou no Firebase (veja as regras do Firestore).");
+  }
 }
 
 async function setResponsavel(id, tag){
