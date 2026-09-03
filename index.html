@@ -495,10 +495,14 @@ h1 em{
 .status-btn.no.active{background:#C1392B;border-color:#C1392B;color:#fff;}
 .status-btn.warn.active{background:#E07B23;border-color:#E07B23;color:#fff;}
 .status-btn.pub.active{background:#1F8A4C;border-color:#1F8A4C;color:#fff;}
+.status-btn.pronto.active{background:#E0B400;border-color:#E0B400;color:#3E3040;}
 
 .cell.publicado{background:#E4F5E8 !important;border-color:#1F8A4C !important;}
 .cell.publicado:hover{border-color:#1F8A4C !important;}
+.cell.pronto{background:#FFF6D6 !important;border-color:#E0B400 !important;}
+.cell.pronto:hover{border-color:#E0B400 !important;}
 .status-chip.publicado{background:#1F8A4C;color:#fff;}
+.status-chip.pronto{background:#E0B400;color:#3E3040;}
 
 .descricao-field textarea{
   width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;
@@ -525,6 +529,24 @@ h1 em{
   cursor:pointer;color:var(--plum-soft);transition:.15s;
 }
 .formato-btn.active{background:var(--plum);border-color:var(--plum);color:var(--cream);}
+
+.titulo-input{
+  width:100%;border:1px solid var(--line);border-radius:10px;
+  padding:9px 11px;font-family:'Fraunces',serif;font-size:17px;
+  background:#fff;color:var(--plum);
+}
+
+.stories-btn{
+  width:100%;border:1.5px dashed var(--line);background:#fff;
+  padding:11px 10px;border-radius:12px;font-size:13px;font-weight:700;
+  cursor:pointer;color:var(--plum-soft);transition:.15s;
+}
+.stories-btn.active{
+  border-style:solid;
+  background:linear-gradient(90deg, rgba(97,167,219,0.14), rgba(97,167,219,0.24));
+  border-color:var(--pink);
+  color:var(--pink-deep);
+}
 
 .note-field{margin-top:10px;display:none;}
 .note-field.show{display:block;}
@@ -677,35 +699,45 @@ window.savePost = async function(id, data){
   await setDoc(postRef(id), data, { merge:true });
   postsCache[id] = data;
 };
-window.__updateCellUI = function(date, data){
-  const status = data?.status || "pendente";
-  const chip = document.querySelector(`.status-chip[data-for="${date}"]`);
-  if(chip){
-    chip.className = "status-chip " + status;
-    chip.textContent = STATUS_LABEL[status];
-  }
+window.__refreshCell = function(date, data){
   const cell = document.querySelector(`.cell[data-date="${date}"]`);
-  if(cell && window.CONTENT_MAP && window.CONTENT_MAP[date]){
-    cell.classList.toggle("publicado", status === "publicado");
-    const item = window.CONTENT_MAP[date];
-    const tag = (data && data.responsavel) ? data.responsavel : item.tag;
-    cell.classList.remove("pink","green");
-    cell.classList.add(tag);
-    const tagSpan = cell.querySelector(".tag");
-    if(tagSpan){
-      tagSpan.className = "tag " + tag;
-      tagSpan.textContent = tag === "green" ? "Karina" : "Luciana";
-    }
-    const formatoSpan = cell.querySelector(".cell-format");
-    if(formatoSpan){
-      formatoSpan.textContent = (data && data.formato) ? data.formato : item.format;
-    }
+  if(!cell) return;
+  const item = window.CONTENT_MAP ? window.CONTENT_MAP[date] : null;
+  const d = data || {};
+  const titulo = d.titulo || (item ? item.title : null);
+  const status = d.status || "pendente";
+  const tag = d.responsavel || (item ? item.tag : "pink");
+  const formato = d.formato || (item ? item.format : "Reels");
+  const stories = !!d.stories;
+  const daynum = cell.dataset.daynum;
+
+  cell.classList.remove("pink","green","publicado","pronto","has-content","open");
+
+  if(!titulo){
+    cell.classList.add("open");
+    cell.innerHTML = `<span class="daynum">${daynum}</span><span class="open-label">Em aberto</span>`;
+    return;
   }
+
+  cell.classList.add("has-content", tag);
+  if(status === "publicado") cell.classList.add("publicado");
+  if(status === "pronto") cell.classList.add("pronto");
+  const tagName = tag === "green" ? "Karina" : "Luciana";
+  const numLabel = item ? `<span class="cell-num">#${String(item.n).padStart(2,'0')}</span>` : '';
+
+  cell.innerHTML = `
+    <span class="status-chip ${status}" data-for="${date}">${STATUS_LABEL[status]}</span>
+    <div>
+      <span class="daynum">${daynum}</span> ${numLabel}
+      <div class="cell-title">${titulo}</div>
+      <div class="cell-format">${formato}${stories ? ' · Stories' : ''}</div>
+    </div>
+    <span class="tag ${tag}">${tagName}</span>`;
 };
 onSnapshot(collection(db, "posts"), (snap)=>{
   snap.docChanges().forEach(change=>{
     postsCache[change.doc.id] = change.doc.data();
-    window.__updateCellUI(change.doc.id, change.doc.data());
+    window.__refreshCell(change.doc.id, change.doc.data());
   });
 });
 </script>
@@ -853,7 +885,7 @@ const CONTENT_MAP = {};
 CONTENT.forEach(c=>CONTENT_MAP[c.date]=c);
 window.CONTENT_MAP = CONTENT_MAP;
 
-const STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", reprovado:"Reprovado", correcao:"Correção", publicado:"Publicado" };
+const STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", reprovado:"Reprovado", correcao:"Correção", publicado:"Publicado", pronto:"Conteúdo Pronto" };
 const postsCache = {};
 
 const WEEK_LABELS = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -924,26 +956,26 @@ MONTHS.forEach((mo, idx)=>{
       continue;
     }
 
+    cell.dataset.date = date;
+    cell.dataset.daynum = d;
+
     const item = CONTENT_MAP[date];
     if(item){
       cell.className = `cell has-content ${item.tag}`;
-      cell.dataset.date = date;
       const tagName = item.tag==='green' ? 'Karina' : 'Luciana';
       cell.innerHTML = `
-        <span class="status-chip pendente" data-for="${item.date}">Pendente</span>
+        <span class="status-chip pendente" data-for="${date}">Pendente</span>
         <div>
           <span class="daynum">${d}</span> <span class="cell-num">#${String(item.n).padStart(2,'0')}</span>
           <div class="cell-title">${item.title}</div>
           <div class="cell-format">${item.format}</div>
         </div>
         <span class="tag ${item.tag}">${tagName}</span>`;
-      cell.addEventListener('click', ()=>openModal(date));
     } else {
       cell.className = 'cell open';
-      cell.dataset.date = date;
       cell.innerHTML = `<span class="daynum">${d}</span><span class="open-label">Em aberto</span>`;
-      cell.addEventListener('click', ()=>openOpenModal(date));
     }
+    cell.addEventListener('click', ()=>openModal(date));
     grid.appendChild(cell);
   }
 });
@@ -975,6 +1007,7 @@ function blockHTML(b){
 }
 
 function blocksToText(item){
+  if(!item || !item.blocks) return "";
   let out = "";
   item.blocks.forEach(b=>{
     if(b.h) out += b.h.toUpperCase() + "\n";
@@ -994,39 +1027,48 @@ function escapeHtml(str){
 }
 
 async function openModal(date){
-  const item = CONTENT_MAP[date];
-  const idx = CONTENT.indexOf(item);
-  const prev = CONTENT[idx-1];
-  const next = CONTENT[idx+1];
+  const item = CONTENT_MAP[date] || null;
+  const idx = item ? CONTENT.indexOf(item) : -1;
+  const prev = idx > -1 ? CONTENT[idx-1] : null;
+  const next = idx > -1 ? CONTENT[idx+1] : null;
 
-  const saved = (await window.loadPost(item.date)) || { status:"pendente", note:"", mediaList:[] };
+  const saved = (await window.loadPost(date)) || { status:"pendente", note:"", mediaList:[] };
   if(!saved.mediaList){ saved.mediaList = saved.media ? [saved.media] : []; }
   const temDescricaoEditada = !!saved.descricao;
   const descricaoTexto = saved.descricao || blocksToText(item);
-  const tagAtual = saved.responsavel || item.tag;
+  const tagAtual = saved.responsavel || (item ? item.tag : 'pink');
   const tagNomeAtual = tagAtual === 'green' ? 'Karina' : 'Luciana';
-  const formatoAtual = saved.formato || item.format;
+  const formatoAtual = saved.formato || (item ? item.format : 'Reels');
+  const tituloAtual = saved.titulo || (item ? item.title : '');
+  const storiesAtivo = !!saved.stories;
   const FORMATOS = ["Reels", "Carrossel", "Postagem estática"];
 
   modal.innerHTML = `
     <div class="modal-head ${tagAtual}" id="modal-head-el">
       <button class="modal-close" onclick="closeModal()">✕</button>
-      <div class="modal-eyebrow">Conteúdo #${String(item.n).padStart(2,'0')} · ${fmtDatePt(item.date)}</div>
-      <h2 class="modal-title">${item.title}</h2>
+      <div class="modal-eyebrow">${item ? `Conteúdo #${String(item.n).padStart(2,'0')} · ` : ''}${fmtDatePt(date)}</div>
+      <h2 class="modal-title" id="modal-title-el">${tituloAtual || 'Sem título ainda'}</h2>
       <div class="modal-meta">
         <span class="meta-chip" id="formato-chip">${formatoAtual}</span>
-        ${item.duration? `<span class="meta-chip">${item.duration}</span>`:''}
+        ${item && item.duration? `<span class="meta-chip">${item.duration}</span>`:''}
         <span class="meta-chip tag-${tagAtual}" id="resp-chip">Responsável: ${tagNomeAtual}</span>
+        ${storiesAtivo ? `<span class="meta-chip" id="stories-chip">+ Stories</span>` : ''}
       </div>
     </div>
     <div class="modal-body">
-      ${temDescricaoEditada
-        ? `<div class="block"><p style="white-space:pre-wrap;">${escapeHtml(descricaoTexto)}</p></div><div class="descricao-editada-aviso">✎ Descrição editada</div>`
-        : item.blocks.map(blockHTML).join('') + (item.final ? `<div class="final-msg"><span>Mensagem final</span>"${item.final}"</div>` : '')}
+      <div class="section-label">Título do conteúdo</div>
+      <input type="text" id="titulo-input" class="titulo-input" placeholder="Ex: Bastidores da produção" value="${escapeHtml(tituloAtual)}" />
+      <div class="saved-hint" id="titulo-hint"></div>
+
+      ${item ? (temDescricaoEditada
+        ? ''
+        : `<div style="margin-top:14px;">${item.blocks.map(blockHTML).join('')}${item.final ? `<div class="final-msg"><span>Mensagem final</span>"${item.final}"</div>` : ''}</div>`)
+        : ''}
+      ${temDescricaoEditada ? `<div class="descricao-editada-aviso" style="margin-top:14px;">✎ Descrição editada abaixo</div>` : ''}
 
       <div class="section-label" style="margin-top:20px;">Descrição do conteúdo (editável)</div>
       <div class="descricao-field">
-        <textarea id="descricao-text">${escapeHtml(descricaoTexto)}</textarea>
+        <textarea id="descricao-text" placeholder="Escreva aqui o roteiro, a legenda ou as instruções deste post...">${escapeHtml(descricaoTexto)}</textarea>
       </div>
       <div class="saved-hint" id="descricao-hint"></div>
 
@@ -1040,6 +1082,9 @@ async function openModal(date){
         <button class="resp-btn green ${tagAtual==='green'?'active':''}" data-r="green">Karina</button>
         <button class="resp-btn pink ${tagAtual==='pink'?'active':''}" data-r="pink">Luciana</button>
       </div>
+
+      <div class="section-label">Stories</div>
+      <button class="stories-btn ${storiesAtivo?'active':''}" id="stories-toggle-btn">${storiesAtivo ? '✓ Stories também vai ser postado' : '+ Acrescentar Stories'}</button>
 
       <div class="section-label">Arte / mídia</div>
       <div id="preview-area" class="preview"><span style="font-size:12.5px;color:#B7AC9E;">Carregando...</span></div>
@@ -1057,6 +1102,7 @@ async function openModal(date){
         <button class="status-btn ok" data-s="aprovado">✓ Aprovado</button>
         <button class="status-btn no" data-s="reprovado">✕ Reprovado</button>
         <button class="status-btn warn" data-s="correcao">✎ Correção</button>
+        <button class="status-btn pronto" data-s="pronto">🟡 Conteúdo Pronto</button>
         <button class="status-btn pub" data-s="publicado">📤 Publicado</button>
       </div>
       <div class="note-field" id="note-field">
@@ -1074,24 +1120,62 @@ async function openModal(date){
 
   currentMediaIndex = Math.max(0, saved.mediaList.length - 1);
 
-  document.getElementById("file-input").onchange = (e)=>handleImage(e, item.date);
-  document.getElementById("attach-video-btn").onclick = ()=>attachVideoLink(item.date);
-  document.getElementById("note-text").oninput = debounce(()=>saveNote(item.date), 500);
-  document.getElementById("descricao-text").oninput = debounce(()=>saveDescricao(item.date), 600);
+  document.getElementById("file-input").onchange = (e)=>handleImage(e, date);
+  document.getElementById("attach-video-btn").onclick = ()=>attachVideoLink(date);
+  document.getElementById("note-text").oninput = debounce(()=>saveNote(date), 500);
+  document.getElementById("descricao-text").oninput = debounce(()=>saveDescricao(date), 600);
+  document.getElementById("titulo-input").oninput = debounce(()=>saveTitulo(date), 500);
+  document.getElementById("stories-toggle-btn").onclick = ()=>toggleStories(date);
   document.querySelectorAll(".status-btn").forEach(b=>{
-    b.onclick = ()=>setStatus(item.date, b.dataset.s);
+    b.onclick = ()=>setStatus(date, b.dataset.s);
   });
   document.querySelectorAll(".resp-btn").forEach(b=>{
-    b.onclick = ()=>setResponsavel(item.date, b.dataset.r);
+    b.onclick = ()=>setResponsavel(date, b.dataset.r);
   });
   document.querySelectorAll(".formato-btn").forEach(b=>{
-    b.onclick = ()=>setFormato(item.date, b.dataset.f);
+    b.onclick = ()=>setFormato(date, b.dataset.f);
   });
 
-  renderPreview(saved.mediaList, item.date);
+  renderPreview(saved.mediaList, date);
   highlightStatus(saved.status);
   document.getElementById("note-text").value = saved.note || "";
   if(saved.status==="correcao") document.getElementById("note-field").classList.add("show");
+}
+
+async function saveTitulo(id){
+  const saved = postsCache[id] || {status:"pendente"};
+  const val = document.getElementById("titulo-input").value.trim();
+  saved.titulo = val;
+  postsCache[id] = saved;
+  const titleEl = document.getElementById("modal-title-el");
+  if(titleEl) titleEl.textContent = val || 'Sem título ainda';
+  const hint = document.getElementById("titulo-hint");
+  window.__refreshCell(id, saved);
+  try{
+    await window.savePost(id, saved);
+    if(hint){ hint.textContent = "Título salvo."; setTimeout(()=>{ if(hint) hint.textContent=""; }, 2500); }
+  }catch(err){
+    console.error(err);
+    if(hint) hint.textContent = "Não salvou no Firebase (veja as regras do Firestore).";
+  }
+}
+
+async function toggleStories(id){
+  const saved = postsCache[id] || {status:"pendente"};
+  saved.stories = !saved.stories;
+  postsCache[id] = saved;
+  const btn = document.getElementById("stories-toggle-btn");
+  if(btn){
+    btn.classList.toggle("active", saved.stories);
+    btn.textContent = saved.stories ? '✓ Stories também vai ser postado' : '+ Acrescentar Stories';
+  }
+  window.__refreshCell(id, saved);
+  try{
+    await window.savePost(id, saved);
+  }catch(err){
+    console.error(err);
+    setHint("Não salvou no Firebase (veja as regras do Firestore).");
+  }
 }
 
 async function setFormato(id, formato){
@@ -1105,7 +1189,7 @@ async function setFormato(id, formato){
     b.classList.toggle("active", b.dataset.f === formato);
   });
 
-  window.__updateCellUI(id, saved);
+  window.__refreshCell(id, saved);
 
   try{
     await window.savePost(id, saved);
@@ -1133,7 +1217,7 @@ async function setResponsavel(id, tag){
   });
 
   // Atualiza o quadradinho no calendário na hora
-  window.__updateCellUI(id, saved);
+  window.__refreshCell(id, saved);
 
   try{
     await window.savePost(id, saved);
@@ -1323,28 +1407,6 @@ function setHint(msg){
 function debounce(fn, ms){
   let t;
   return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); };
-}
-
-function openOpenModal(date){
-  modal.innerHTML = `
-    <div class="modal-head">
-      <button class="modal-close" onclick="closeModal()">✕</button>
-      <div class="modal-eyebrow">${fmtDatePt(date)}</div>
-      <h2 class="modal-title">Conteúdo em aberto</h2>
-    </div>
-    <div class="modal-body">
-      <div class="block">
-        <h4>O que fazer aqui</h4>
-        <p>Esta data está fora dos 14 conteúdos já roteirizados no plano de produção atual. Sugestões:</p>
-        <ul>
-          <li>Repetir um formato recorrente, como "Bastidores da Produção" ou "Novas Máquinas / Investimentos", sempre que houver novidade real na fábrica.</li>
-          <li>Reaproveitar um dos temas já roteirizados com um ângulo novo.</li>
-          <li>Planejar uma nova pauta e adicioná-la ao plano de produção.</li>
-        </ul>
-      </div>
-    </div>
-  `;
-  overlay.classList.add('show');
 }
 
 function closeModal(){ overlay.classList.remove('show'); }
