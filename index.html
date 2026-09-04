@@ -116,6 +116,7 @@ h1 em{
 .dot.pink{background:var(--pink);}
 .dot.green{background:var(--green);}
 .dot.off{background:#C9C0AF;}
+.dot.stories{background:#0E9AA7;}
 
 .month-nav{
   display:flex;
@@ -299,6 +300,19 @@ h1 em{
   font-size:10.5px;
   color:#B7AC97;
   font-weight:600;
+  margin-top:auto;
+}
+
+.cell.stories-only{
+  background:#E3F6F5;
+  border:1.5px solid #0E9AA7;
+  cursor:pointer;
+}
+.cell.stories-only:hover{border-color:#0E9AA7; box-shadow:0 8px 16px -8px rgba(14,154,167,0.35);}
+.cell.stories-only .open-label{
+  font-size:10.5px;
+  color:#0E7480;
+  font-weight:700;
   margin-top:auto;
 }
 
@@ -663,6 +677,7 @@ h1 em{
   <div class="legend">
     <div class="legend-item"><span class="dot green"></span>Karina — Reels</div>
     <div class="legend-item"><span class="dot pink"></span>Luciana — Carrossel / Postagem estática</div>
+    <div class="legend-item"><span class="dot stories"></span>Só Stories (sem post no feed)</div>
     <div class="legend-item"><span class="dot off"></span>Domingo — sem postagem</div>
   </div>
 
@@ -722,11 +737,16 @@ window.__refreshCell = function(date, data){
   const stories = !!d.stories;
   const daynum = cell.dataset.daynum;
 
-  cell.classList.remove("pink","green","publicado","pronto","has-content","open");
+  cell.classList.remove("pink","green","publicado","pronto","has-content","open","stories-only");
 
   if(!titulo){
-    cell.classList.add("open");
-    cell.innerHTML = `<span class="daynum">${daynum}</span><span class="open-label">Em aberto</span>`;
+    if(stories){
+      cell.classList.add("stories-only");
+      cell.innerHTML = `<span class="daynum">${daynum}</span><span class="open-label">Stories</span>`;
+    } else {
+      cell.classList.add("open");
+      cell.innerHTML = `<span class="daynum">${daynum}</span><span class="open-label">Em aberto</span>`;
+    }
     return;
   }
 
